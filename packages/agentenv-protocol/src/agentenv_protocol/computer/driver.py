@@ -12,7 +12,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from ..agent_env_environment import (_CARD_CONFIG_ATTR, AgentEnvEnvironment, AgentEnvFastMCPApplication,
-                                     _error_response, environment_card)
+                                     _error_response, control_guard, environment_card)
 from ..tool_context import ToolContext
 from ..types import EnvironmentCard, EnvironmentExtension, EnvironmentTool
 from . import _linux, apps, card
@@ -135,7 +135,7 @@ class ComputerDriverEnvironment(Tools, Extensions, DataPlane, AgentEnvEnvironmen
         return await apps.children(self._computer.apps) if self._computer.apps else None
 
     def _computer_front_apps(self, app: Any) -> Any:
-        app.custom_route("/svc/{name}/{path:path}", methods=["GET", "POST"])(self._computer_forward)
+        app.custom_route("/svc/{name}/{path:path}", methods=["GET", "POST"])(control_guard()(self._computer_forward))
         return app
 
     async def _computer_forward(self, request: Request) -> Response:

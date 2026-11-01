@@ -236,6 +236,7 @@ class _FakeAsyncClient:
         self.response = response
         self.error = error
         self.requests = []
+        self.headers = []
 
     def __call__(self, **kwargs):
         return self
@@ -246,8 +247,9 @@ class _FakeAsyncClient:
     async def __aexit__(self, *exc):
         return False
 
-    def stream(self, method, url, params=None):
+    def stream(self, method, url, params=None, headers=None):
         self.requests.append((method, url, params))
+        self.headers.append(headers)
         client = self
 
         class _CM:
@@ -428,7 +430,7 @@ async def test_trajectory_capture_records_one_sentence_when_the_card_offers_no_t
 
 
 @pytest.mark.asyncio
-async def test_trajectory_capture_streams_from_the_stored_cards_address_and_endpoint(monkeypatch):
+async def test_trajectory_capture_streams_from_the_stored_cards_address_and_endpoint_with_its_token(monkeypatch):
     _wire_fake_snapshot(monkeypatch)
     client = _FakeAsyncClient(response=_FakeTrajectoryResponse([b"{}\n"]))
     _wire_fake_capture(monkeypatch, client)
@@ -436,22 +438,28 @@ async def test_trajectory_capture_streams_from_the_stored_cards_address_and_endp
     deployed.environment_card_url = f"https://sandbox.example/sb-1{WELL_KNOWN_PATH}"
     deployed.environment_card = {"capabilities": {"extensions": [{
         "uri": "urn:agentenv:trajectory/v1", "params": {"endpoint": "/env/trajectory", "methods": {"get": {"method": "GET"}}}}]}}
+    deployed.control_token = "t0ken"
 
     await _step(include_env_trajectory=True).execute(_ctx(deployed))
 
     assert [(m, u) for m, u, _ in client.requests] == [("GET", "https://sandbox.example/sb-1/env/trajectory")]
+    assert client.headers == [{"Authorization": "Bearer t0ken"}]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("deployments", [[], [_deployed()]], ids=["pure-override", "next-to-a-deployment"])
-async def test_trajectory_capture_with_a_gateway_url_override_reads_the_override(monkeypatch, deployments):
+async def test_trajectory_capture_with_a_gateway_url_override_reads_the_override_without_a_token(monkeypatch,
+                                                                                                 deployments):
     _wire_fake_snapshot(monkeypatch)
     client = _FakeAsyncClient(response=_FakeTrajectoryResponse([b"{}\n"]))
     _wire_fake_capture(monkeypatch, client)
+    for deployed in deployments:
+        deployed.control_token = "t0ken"
 
     await _step(env_id="env-1", gateway_url="https://override/", include_env_trajectory=True).execute(_ctx(*deployments))
 
     assert [(m, u) for m, u, _ in client.requests] == [("GET", "https://override/trajectory")]
+    assert "Authorization" not in (client.headers[0] or {})
 
 
 # ── env changes capture ──────────────────────────────────────────────────────
@@ -464,7 +472,7 @@ class _FakeChangesClient(_FakeAsyncClient):
         self.rows = rows or []
         self.page_size = page_size
 
-    async def request(self, method, url, params=None):
+    async def request(self, method, url, params=None, headers=None):
         self.requests.append((method, url, params))
         if self.error:
             raise self.error
@@ -736,7 +744,7 @@ async def test_export_service_to_file_materializes_filepart_zip(monkeypatch, tmp
     async def fake_supports_v1(base_url):
         return True
 
-    async def fake_get_data(base_url, timeout=None):
+    async def fake_get_data(base_url, timeout=None, headers=None):
         return GetDataResponse(parts=[part])
 
     async def fake_get_card(base_url, timeout=10):
@@ -782,7 +790,7 @@ async def test_export_service_to_file_resolves_relative_uri_and_streams(
     async def fake_supports_v1(base_url):
         return True
 
-    async def fake_get_data(base_url, timeout=None):
+    async def fake_get_data(base_url, timeout=None, headers=None):
         return GetDataResponse(parts=[part])
 
     async def fake_get_card(base_url, timeout=10):
@@ -815,7 +823,7 @@ async def test_export_service_to_file_resolves_relative_uri_and_streams(
         async def __aexit__(self, *exc):
             return False
 
-        def stream(self, method, url, timeout=None):
+        def stream(self, method, url, timeout=None, headers=None):
             captured["method"] = method
             captured["url"] = url
             return _FakeStreamCtx()
@@ -840,7 +848,7 @@ def _serve_filepart_uri(monkeypatch, uri):
     async def fake_supports_v1(base_url):
         return True
 
-    async def fake_get_data(base_url, timeout=None):
+    async def fake_get_data(base_url, timeout=None, headers=None):
         return GetDataResponse(parts=[part])
 
     async def fake_get_card(base_url, timeout=10):
@@ -975,7 +983,7 @@ async def test_export_service_to_file_filepart_without_bytes_or_uri_raises_value
     async def fake_supports_v1(base_url):
         return True
 
-    async def fake_get_data(base_url, timeout=None):
+    async def fake_get_data(base_url, timeout=None, headers=None):
         return GetDataResponse(parts=[part])
 
     async def fake_get_card(base_url, timeout=10):
