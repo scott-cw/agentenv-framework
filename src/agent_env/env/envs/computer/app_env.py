@@ -114,7 +114,8 @@ class ComputerAppEnv(ComputerEnv):
         if (computer is None) != (driver is None):
             problems.append("a computer app deploys alone on a computer and a driver; name both or neither")
         elif computer is not None and not problems:
-            _, refused = gate.check(computer, driver, apps=[], display=None, network=None, computer_settings={})
+            _, refused = gate.check(computer, driver, environment_name=environment_name, apps=[], display=None,
+                                    network=None, computer_settings={})
             problems += refused + gate.check_app(computer, driver, app)
         if problems:
             raise ValueError(f"computer app env {id!r}: " + "; ".join(problems))
@@ -144,17 +145,18 @@ class ComputerAppEnv(ComputerEnv):
         driver = ctx.env(fields["driver"], ComputerDriverEnv) if "driver" in fields else None
         universe = FileArtifactUniverse.put_bundled(derive_id(ctx.id, "files"), files=files)
         try:
-            return cls.put(id=ctx.id, environment_name=fields.get("environment_name", ctx.name),
-                           module=fields["module"], files=universe, declaration=declaration, computer=computer,
-                           driver=driver, build_settings=fields.get("build_settings"), composing=ctx.composing)
+            return cls.put(id=ctx.id, environment_name=fields["environment_name"], module=fields["module"],
+                           files=universe, declaration=declaration, computer=computer, driver=driver,
+                           build_settings=fields.get("build_settings"), composing=ctx.composing)
         except ValueError as e:
             ctx.refuse([str(e)])
 
     @classmethod
     def accept_toml(cls, data: dict, ctx: AuthoringContext) -> dict:
         """The keys of ``data``, an env.toml, a computer app env takes: ``module = "<file>:<class>"``, naming a file of
-        its folder; ``environment_name``; the ``computer`` and ``driver`` it deploys alone on; and ``build_settings``,
-        the values of its build settings. Raises BundleError listing every problem."""
+        its folder; ``environment_name``, the folder's when it sets none; the ``computer`` and ``driver`` it deploys
+        alone on; and ``build_settings``, the values of its build settings. Raises BundleError listing every
+        problem."""
         fields, refused = ctx.accepted(data, environment_name=str, module=str, computer=object, driver=object,
                                        build_settings=dict)
         files, module, problems = ctx.files(), fields.get("module"), []
@@ -165,7 +167,7 @@ class ComputerAppEnv(ComputerEnv):
                             f"{', '.join(sorted(files))}")
         if refused or problems:
             ctx.refuse([*refused, *map(ctx.config_problem, problems)])
-        return fields
+        return {"environment_name": ctx.name, **fields}
 
     def deploy_refusal(self, *, sandbox_type: str | None = None, env_params: Optional[dict] = None,
                        **options) -> str | None:

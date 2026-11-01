@@ -157,6 +157,32 @@ def test_a_computer_env_folder_names_its_apps_in_order_each_written_before_it(tm
     assert composed == [(env.id, UBUNTU, REFERENCE, None)]
 
 
+@pytest.mark.parametrize("stored", [False, True], ids=["in-the-bundle", "in-the-store"])
+def test_a_universe_loaded_into_a_computer_env_seeds_its_files_and_each_of_its_apps_by_their_folders_names(
+        tmp_path, composed, stored):
+    if stored:
+        plan = _plan(_bundle(tmp_path / "desk", WITH_APPS, APPS))
+        materialize(plan, build_here=local_builds(plan))
+        env_id, folders = f"{plan.bundle.bundle.id_root}/desktop", {}
+        into = f"env '{env_id}'"
+    else:
+        env_id, folders, into = "desktop", {"envs/desktop/env.toml": WITH_APPS, **APPS}, "envs/desktop"
+
+    def loading(root, *seeded):
+        return layout(root, {**folders, "artifacts/world/artifact.toml": 'type = "environment_universe"\n',
+                             **{f"artifacts/world/{name}/a.json": "{}" for name in ("desktop", "mail", *seeded)},
+                             "tasks/t.json": json.dumps([{"id": "load", "type": "load_artifact", "env_id": env_id,
+                                                          "artifact_id": "world"}])})
+
+    _plan(loading(tmp_path / "seeds"))
+    with pytest.raises(BundleError) as refused:
+        _plan(loading(tmp_path / "typo", "mial"))
+
+    assert refused.value.problems == (
+        f"tasks/t.json: step 'load': artifacts/world/mial seeds an environment named 'mial', and {into} has no server "
+        "by that name ('desktop', 'mail', 'notes'); name it after the server it seeds, or leave it out",)
+
+
 @pytest.mark.parametrize("toml, problem", [
     ('type = "computer"\ndriver = "reference"\n', 'computer is required: the base computer, such as "ubuntu-24.04"'),
     ('type = "computer"\ncomputer = "ubuntu-24.04"\n', 'driver is required: the driver, such as "reference"'),
